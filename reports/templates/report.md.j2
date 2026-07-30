@@ -1,0 +1,30 @@
+Business Name:
+{{ business.name }}
+
+Industry:
+{{ business.category }}
+
+Website:
+{{ "Yes" if website.has_website else "No" }}
+
+Social Media:
+{% if social.platforms_found %}{{ social.platforms_found | join(", ") | title }} Active{% else %}None detected{% endif %}
+
+Observed Problems:
+{% for p in problems %}{{ loop.index }}. {{ p }}
+{% else %}No significant problems detected.
+{% endfor %}
+Suggested Solution:
+{% for s in solutions %}{{ s }}
+{% else %}None
+{% endfor %}
+Lead Score:
+{{ lead_score }}/100
+
+Priority:
+{{ priority }}
+
+---
+Score Reasons:
+{% for r in score_reasons %}- {{ r }}
+{% endfor %}

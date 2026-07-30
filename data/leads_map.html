@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html>
+<head>
+    
+    <meta http-equiv="content-type" content="text/html; charset=UTF-8" />
+    <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.js"></script>
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Leaflet.awesome-markers/2.0.2/leaflet.awesome-markers.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.css"/>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/css/bootstrap.min.css"/>
+    <link rel="stylesheet" href="https://netdna.bootstrapcdn.com/bootstrap/3.0.0/css/bootstrap-glyphicons.css"/>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.2.0/css/all.min.css"/>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/Leaflet.awesome-markers/2.0.2/leaflet.awesome-markers.css"/>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/python-visualization/folium/folium/templates/leaflet.awesome.rotate.min.css"/>
+    
+            <meta name="viewport" content="width=device-width,
+                initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+            <style>
+                #map_af9f0eb2926afdff44924059403a305c {
+                    position: relative;
+                    width: 100.0%;
+                    height: 100.0%;
+                    left: 0.0%;
+                    top: 0.0%;
+                }
+                .leaflet-container { font-size: 1rem; }
+            </style>
+
+            <style>html, body {
+                width: 100%;
+                height: 100%;
+                margin: 0;
+                padding: 0;
+            }
+            </style>
+
+            <style>#map {
+                position:absolute;
+                top:0;
+                bottom:0;
+                right:0;
+                left:0;
+                }
+            </style>
+
+            <script>
+                L_NO_TOUCH = false;
+                L_DISABLE_3D = false;
+            </script>
+
+        
+</head>
+<body>
+    
+    
+            <div class="folium-map" id="map_af9f0eb2926afdff44924059403a305c" ></div>
+        
+</body>
+<script>
+    
+    
+            var map_af9f0eb2926afdff44924059403a305c = L.map(
+                "map_af9f0eb2926afdff44924059403a305c",
+                {
+                    center: [-6.805896966666666, 39.28268896666666],
+                    crs: L.CRS.EPSG3857,
+                    ...{
+  "zoom": 13,
+  "zoomControl": true,
+  "preferCanvas": false,
+}
+
+                }
+            );
+
+            
+
+        
+    
+            var tile_layer_76dcd7369bd358500782c96b7065cf8a = L.tileLayer(
+                "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+                {
+  "minZoom": 0,
+  "maxZoom": 19,
+  "maxNativeZoom": 19,
+  "noWrap": false,
+  "attribution": "\u0026copy; \u003ca href=\"https://www.openstreetmap.org/copyright\"\u003eOpenStreetMap\u003c/a\u003e contributors",
+  "subdomains": "abc",
+  "detectRetina": false,
+  "tms": false,
+  "opacity": 1,
+}
+
+            );
+        
+    
+            tile_layer_76dcd7369bd358500782c96b7065cf8a.addTo(map_af9f0eb2926afdff44924059403a305c);
+        
+    
+            var marker_55a37b6e995a57e9fcdbffccb0bd7d7c = L.marker(
+                [-6.819376, 39.2861522],
+                {
+}
+            ).addTo(map_af9f0eb2926afdff44924059403a305c);
+        
+    
+            var icon_a574dad573ccbae4996df86ba6bf2b51 = L.AwesomeMarkers.icon(
+                {
+  "markerColor": "orange",
+  "iconColor": "white",
+  "icon": "info-sign",
+  "prefix": "glyphicon",
+  "extraClasses": "fa-rotate-0",
+}
+            );
+        
+    
+        var popup_3e7584ed65a3102b2093d2ffb79595a9 = L.popup({
+  "maxWidth": 300,
+});
+
+        
+            
+                var html_f272caef04898892bf2b444ce58f08fe = $(`<div id="html_f272caef04898892bf2b444ce58f08fe" style="width: 100.0%; height: 100.0%;">     <b>Rendezvous Restaurant</b><br>     Category: restaurant<br>     Score: 48/100 (Medium)<br>     <b>Problems:</b><ul><li>Lack of online presence through a website</li><li>No reviews available to attract and retain customers</li></ul>     <b>Suggested solutions:</b><ul><li>Website builder (e.g. Wix, Squarespace) for mobile-friendly website</li><li>Review management platform (e.g. ReviewTrackers) to collect and showcase customer reviews</li></ul>     </div>`)[0];
+                popup_3e7584ed65a3102b2093d2ffb79595a9.setContent(html_f272caef04898892bf2b444ce58f08fe);
+            
+        
+
+        marker_55a37b6e995a57e9fcdbffccb0bd7d7c.bindPopup(popup_3e7584ed65a3102b2093d2ffb79595a9)
+        ;
+
+        
+    
+    
+            marker_55a37b6e995a57e9fcdbffccb0bd7d7c.bindTooltip(
+                `<div>
+                     Rendezvous Restaurant — 48/100
+                 </div>`,
+                {
+  "sticky": true,
+}
+            );
+        
+    
+                marker_55a37b6e995a57e9fcdbffccb0bd7d7c.setIcon(icon_a574dad573ccbae4996df86ba6bf2b51);
+            
+    
+            var marker_7ab3d5f3a40d5c4a88ffc1c8470d3024 = L.marker(
+                [-6.818013, 39.2824479],
+                {
+}
+            ).addTo(map_af9f0eb2926afdff44924059403a305c);
+        
+    
+            var icon_737c26ab680e31a36d4d734f53bbdfb0 = L.AwesomeMarkers.icon(
+                {
+  "markerColor": "orange",
+  "iconColor": "white",
+  "icon": "info-sign",
+  "prefix": "glyphicon",
+  "extraClasses": "fa-rotate-0",
+}
+            );
+        
+    
+        var popup_6fd94046212c3a7aa4f216aeb7bf9e54 = L.popup({
+  "maxWidth": 300,
+});
+
+        
+            
+                var html_94d924f4a6277f9f2a454b2feaa40b71 = $(`<div id="html_94d924f4a6277f9f2a454b2feaa40b71" style="width: 100.0%; height: 100.0%;">     <b>Chef's Pride</b><br>     Category: restaurant<br>     Score: 40/100 (Medium)<br>     <b>Problems:</b><ul><li>Lack of website makes it difficult for customers to find and learn about Chef's Pride</li><li>No social media presence limits their ability to engage with customers and promote the business</li></ul>     <b>Suggested solutions:</b><ul><li>None</li></ul>     </div>`)[0];
+                popup_6fd94046212c3a7aa4f216aeb7bf9e54.setContent(html_94d924f4a6277f9f2a454b2feaa40b71);
+            
+        
+
+        marker_7ab3d5f3a40d5c4a88ffc1c8470d3024.bindPopup(popup_6fd94046212c3a7aa4f216aeb7bf9e54)
+        ;
+
+        
+    
+    
+            marker_7ab3d5f3a40d5c4a88ffc1c8470d3024.bindTooltip(
+                `<div>
+                     Chef's Pride — 40/100
+                 </div>`,
+                {
+  "sticky": true,
+}
+            );
+        
+    
+                marker_7ab3d5f3a40d5c4a88ffc1c8470d3024.setIcon(icon_737c26ab680e31a36d4d734f53bbdfb0);
+            
+    
+            var marker_1ea4ce425d90e29f3264400acf7f4f2c = L.marker(
+                [-6.7803019, 39.2794668],
+                {
+}
+            ).addTo(map_af9f0eb2926afdff44924059403a305c);
+        
+    
+            var icon_e7a7a77a27d819607089bb29b5a70919 = L.AwesomeMarkers.icon(
+                {
+  "markerColor": "orange",
+  "iconColor": "white",
+  "icon": "info-sign",
+  "prefix": "glyphicon",
+  "extraClasses": "fa-rotate-0",
+}
+            );
+        
+    
+        var popup_37c366a2c2809c7ad963a492a2bcd48f = L.popup({
+  "maxWidth": 300,
+});
+
+        
+            
+                var html_6c4f65752ebbf6f19123cc4016e999cc = $(`<div id="html_6c4f65752ebbf6f19123cc4016e999cc" style="width: 100.0%; height: 100.0%;">     <b>Ari</b><br>     Category: restaurant<br>     Score: 58/100 (Medium)<br>     <b>Problems:</b><ul><li>No website found.</li><li>No reviews available.</li><li>Social media platforms missing: facebook, instagram, tiktok, twitter_x</li></ul>     <b>Suggested solutions:</b><ul><li>Website builder (e.g. Wix, Squarespace)</li><li>Online ordering platform (e.g. Toast, Upserve)</li></ul>     </div>`)[0];
+                popup_37c366a2c2809c7ad963a492a2bcd48f.setContent(html_6c4f65752ebbf6f19123cc4016e999cc);
+            
+        
+
+        marker_1ea4ce425d90e29f3264400acf7f4f2c.bindPopup(popup_37c366a2c2809c7ad963a492a2bcd48f)
+        ;
+
+        
+    
+    
+            marker_1ea4ce425d90e29f3264400acf7f4f2c.bindTooltip(
+                `<div>
+                     Ari — 58/100
+                 </div>`,
+                {
+  "sticky": true,
+}
+            );
+        
+    
+                marker_1ea4ce425d90e29f3264400acf7f4f2c.setIcon(icon_e7a7a77a27d819607089bb29b5a70919);
+            
+</script>
+</html>
