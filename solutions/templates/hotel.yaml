@@ -1,0 +1,17 @@
+package_name: "Hotel Digital Presence Platform"
+base_features:
+  - "Website"
+  - "Online Booking"
+  - "Room Management"
+  - "WhatsApp Booking"
+optional_features:
+  - "Customer CRM"
+  - "Review Management"
+  - "Event/Conference Booking"
+default_tech_stack:
+  frontend: "React"
+  backend: "FastAPI"
+  database: "PostgreSQL"
+  hosting: "DigitalOcean"
+base_cost_usd: [2000, 4000]
+base_weeks: [4, 7]

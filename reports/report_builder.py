@@ -9,14 +9,20 @@ from analysis.lead_scorer import score_lead
 from analysis.problem_detector import detect_problems
 from analysis.solution_recommender import recommend_solutions
 from discovery.models import LeadReport, ResearchBundle
+from research.presence_summarizer import summarize_presence
 
 TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
 _env = Environment(loader=FileSystemLoader(str(TEMPLATE_DIR)), trim_blocks=True, lstrip_blocks=True)
 
 
 def build_lead_report(bundle: ResearchBundle) -> LeadReport:
-    """Runs problem detection -> solution recommendation -> scoring for one business."""
-    problems = detect_problems(bundle)
+    """Runs presence summary -> problem detection -> recommendation -> scoring.
+
+    The worker-model presence summary is fed into problem detection as
+    additional context, not a replacement for the structured findings.
+    """
+    presence_summary = summarize_presence(bundle)
+    problems = detect_problems(bundle, presence_summary=presence_summary)
     solutions = recommend_solutions(bundle.business, problems)
     score, priority, reasons = score_lead(bundle, problems, solutions)
 

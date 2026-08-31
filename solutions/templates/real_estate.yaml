@@ -1,0 +1,17 @@
+package_name: "Real Estate Digital Platform"
+base_features:
+  - "Website"
+  - "Property Listings"
+  - "Virtual Tours"
+  - "Contact/Inquiry Form"
+optional_features:
+  - "Mortgage Calculator"
+  - "Agent Profiles"
+  - "Property Alerts"
+default_tech_stack:
+  frontend: "Next.js"
+  backend: "Node/Express"
+  database: "MongoDB"
+  hosting: "Render"
+base_cost_usd: [2000, 3500]
+base_weeks: [4, 6]

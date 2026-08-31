@@ -6,12 +6,13 @@ from llm.client import get_llm_client
 from llm.prompts import PROBLEM_DETECTION_PROMPT
 
 
-def detect_problems(bundle: ResearchBundle) -> ProblemAnalysis:
-    llm = get_llm_client()
+def detect_problems(bundle: ResearchBundle, presence_summary: str | None = None) -> ProblemAnalysis:
+    llm = get_llm_client(role="reasoning")
 
     prompt = PROBLEM_DETECTION_PROMPT.format(
         business_name=bundle.business.name,
         category=bundle.business.category,
+        presence_summary=presence_summary or "No presence summary provided.",
         website_findings=_summarize_website(bundle),
         review_findings=_summarize_reviews(bundle),
         social_findings=_summarize_social(bundle),

@@ -52,6 +52,7 @@ def check_website(url: Optional[str]) -> WebsiteFindings:
         return findings
 
     findings.reachable = True
+    findings.page_html = resp.text  # kept transient for contact_finder to reuse — not persisted
     soup = BeautifulSoup(resp.text, "lxml")
 
     from research.social_checker import extract_social_links  # local import avoids a cycle at module load
