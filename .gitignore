@@ -1,0 +1,72 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+.venv/
+venv/
+ENV/
+env/
+*.egg
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+.pyre/
+
+# Environment & secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# Data & generated artifacts (keep directory, ignore contents)
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
+data/*.html
+data/proposals/
+data/*.csv
+!data/.gitkeep
+nope.csv
+
+# Node / Frontend
+ACA_UI/node_modules/
+ACA_UI/dist/
+ACA_UI/dist-ssr/
+ACA_UI/.vite/
+node_modules/
+dist/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# IDE
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.code-workspace
+
+# Misc
+.cache/
+.parcel-cache/
+.turbo/

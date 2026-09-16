@@ -30,6 +30,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import threading
 from abc import ABC, abstractmethod
 from typing import Any, Literal
 
@@ -41,6 +42,10 @@ from config.settings import settings
 logger = logging.getLogger(__name__)
 
 Role = Literal["worker", "reasoning"]
+
+# Limits concurrent LLM calls to avoid overwhelming Ollama (or a hosted API)
+# when the pipeline processes multiple businesses in parallel threads.
+_llm_semaphore = threading.Semaphore(3)
 
 WORKER_ONLY_WARNING = (
     "Running in worker-only mode — reasoning-tier tasks will use the smaller "
@@ -82,45 +87,46 @@ class OllamaClient(LLMClient):
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=10), reraise=True)
     def generate(self, prompt: str, system: str | None = None) -> str:
-        payload: dict[str, Any] = {
-            "model": self.model,
-            "prompt": prompt,
-            "stream": False,
-            "keep_alive": self.keep_alive,
-        }
-        if system:
-            payload["system"] = system
+        with _llm_semaphore:
+            payload: dict[str, Any] = {
+                "model": self.model,
+                "prompt": prompt,
+                "stream": False,
+                "keep_alive": self.keep_alive,
+            }
+            if system:
+                payload["system"] = system
 
-        try:
-            resp = requests.post(
-                f"{self.host}/api/generate",
-                json=payload,
-                timeout=120,
-            )
-        except requests.ConnectionError as exc:
-            raise RuntimeError(
-                f"Could not reach Ollama at {self.host}. Is it running? "
-                f"Try `ollama serve` and `ollama pull {self.model}`."
-            ) from exc
-
-        if resp.status_code >= 400:
-            # Ollama returns {"error": "..."} with, e.g., 404 when a model
-            # isn't pulled. Surface that instead of a bare HTTP error so a
-            # wrong model tag is immediately diagnosable in the log.
-            detail = ""
             try:
-                detail = (resp.json().get("error") or "").strip()
-            except ValueError:
-                detail = resp.text[:300].strip()
-            suffix = detail and f" {detail}"
-            hint = f" Is it pulled? Try `ollama pull {self.model}`." if resp.status_code == 404 else ""
-            raise RuntimeError(
-                f"Ollama at {self.host} rejected model {self.model!r} "
-                f"(HTTP {resp.status_code}):{suffix}{hint}"
-            )
+                resp = requests.post(
+                    f"{self.host}/api/generate",
+                    json=payload,
+                    timeout=120,
+                )
+            except requests.ConnectionError as exc:
+                raise RuntimeError(
+                    f"Could not reach Ollama at {self.host}. Is it running? "
+                    f"Try `ollama serve` and `ollama pull {self.model}`."
+                ) from exc
 
-        data = resp.json()
-        return data.get("response", "")
+            if resp.status_code >= 400:
+                # Ollama returns {"error": "..."} with, e.g., 404 when a model
+                # isn't pulled. Surface that instead of a bare HTTP error so a
+                # wrong model tag is immediately diagnosable in the log.
+                detail = ""
+                try:
+                    detail = (resp.json().get("error") or "").strip()
+                except ValueError:
+                    detail = resp.text[:300].strip()
+                suffix = detail and f" {detail}"
+                hint = f" Is it pulled? Try `ollama pull {self.model}`." if resp.status_code == 404 else ""
+                raise RuntimeError(
+                    f"Ollama at {self.host} rejected model {self.model!r} "
+                    f"(HTTP {resp.status_code}):{suffix}{hint}"
+                )
+
+            data = resp.json()
+            return data.get("response", "")
 
     def unload(self) -> None:
         """Immediately releases this model from memory via keep_alive=0.
@@ -150,20 +156,21 @@ class GroqClient(LLMClient):
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=10), reraise=True)
     def generate(self, prompt: str, system: str | None = None) -> str:
-        messages = []
-        if system:
-            messages.append({"role": "system", "content": system})
-        messages.append({"role": "user", "content": prompt})
+        with _llm_semaphore:
+            messages = []
+            if system:
+                messages.append({"role": "system", "content": system})
+            messages.append({"role": "user", "content": prompt})
 
-        resp = requests.post(
-            "https://api.groq.com/openai/v1/chat/completions",
-            headers={"Authorization": f"Bearer {self.api_key}"},
-            json={"model": self.model, "messages": messages, "temperature": 0.2},
-            timeout=60,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        return data["choices"][0]["message"]["content"]
+            resp = requests.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={"Authorization": f"Bearer {self.api_key}"},
+                json={"model": self.model, "messages": messages, "temperature": 0.2},
+                timeout=60,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            return data["choices"][0]["message"]["content"]
 
 
 def _extract_json(raw: str) -> dict[str, Any]:

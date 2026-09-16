@@ -118,6 +118,7 @@ CREATE TABLE IF NOT EXISTS opportunity_rankings (
 def init_db() -> None:
     Path(settings.DATABASE_PATH).parent.mkdir(parents=True, exist_ok=True)
     with get_connection() as conn:
+        conn.execute("PRAGMA journal_mode=WAL")
         conn.executescript(SCHEMA)
 
 

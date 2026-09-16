@@ -303,11 +303,7 @@ client-acquisition-agent/
 ├── tests/
 │   └── test_opportunity_ranker.py # unit tests for the ranking engine
 └── main.py                        # CLI entry point (subcommands)
-```
-
-## V2: how proposal generation works
-
-1. **Lead Qualification** (`analysis/lead_qualifier.py`)
+```/
    - Rule-based scoring of business activity, digital presence, ability-to-pay, and solution need.
    - Leads scoring below `MIN_QUALIFICATION_SCORE_FOR_PROPOSAL` (default: 40) are skipped — no wasted LLM calls.
 

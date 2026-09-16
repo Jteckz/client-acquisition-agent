@@ -63,6 +63,7 @@ def main() -> None:
                      help="Run V2 qualification -> design -> cost -> proposal for qualified leads")
     p_d.add_argument("--min-qualification", type=int, default=None,
                      help="Override minimum qualification score for proposals")
+    p_d.add_argument("--workers", type=int, default=6, help="Max parallel workers (default: 6)")
     p_d.set_defaults(func=cmd_discover)
 
     # ── V3 subcommands ─────────────────────────────────────────────────
@@ -145,6 +146,7 @@ def cmd_discover(args: argparse.Namespace) -> None:
         location=args.location,
         max_results=args.limit,
         generate_proposals=args.generate_proposals,
+        max_workers=getattr(args, "workers", 6),
     )
 
     print(f"\nGenerated {len(reports)} lead reports.\n")

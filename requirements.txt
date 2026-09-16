@@ -8,3 +8,5 @@ tenacity>=8.2.0
 folium>=0.16.0
 PyYAML>=6.0
 weasyprint>=69.0
+fastapi>=0.115.0
+uvicorn>=0.30.0
