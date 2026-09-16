@@ -1,0 +1,13 @@
+Section,Metric,Value
+funnel,Businesses Found,0
+funnel,Analyzed,0
+funnel,Qualified,0
+funnel,Proposals Generated,0
+funnel,Outreach Drafted,0
+funnel,Outreach Approved,0
+funnel,Outreach Sent,0
+funnel,Responses Logged,0
+funnel,Interested (Warm+Converted),0
+funnel,Clients Won,0
+
+Business,Category,Rank Score,Qualification,Priority,Proposal Status,Budget Min,Budget Max,Weeks Min,Weeks Max,Package Name,Pipeline Status,Interest Level,Last Contact Date

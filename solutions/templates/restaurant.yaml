@@ -1,0 +1,17 @@
+package_name: "Restaurant Digital Platform"
+base_features:
+  - "Website"
+  - "Digital Menu"
+  - "Online Ordering"
+  - "WhatsApp Integration"
+optional_features:
+  - "Customer Analytics"
+  - "Loyalty Program"
+  - "Table Reservation System"
+default_tech_stack:
+  frontend: "React"
+  backend: "FastAPI"
+  database: "PostgreSQL"
+  hosting: "DigitalOcean"
+base_cost_usd: [1500, 2500]
+base_weeks: [3, 5]

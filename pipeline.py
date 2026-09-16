@@ -1,22 +1,23 @@
 """
-Orchestrates the full V1 workflow, mirroring the diagram in the project
-spec:
+Orchestrates the full V1+V2 workflow.
 
-  Business Source -> Business Data Collector -> Research Agent ->
-  Business Analysis -> Problem Detection -> Solution Suggestions -> Lead Report
+  V1: discover -> research -> detect problems -> recommend solutions -> score -> report
+  V2: qualify -> design solution -> recommend tech stack -> estimate cost -> generate proposal PDF
 """
 from __future__ import annotations
 
+import concurrent.futures
 import logging
+import threading
 
-from discovery.models import Business, LeadReport, ResearchBundle
+from discovery.models import Business, LeadReport, ProposalDocument, ResearchBundle
 from discovery.osm_places import parse_query, search_businesses
 from research.reviews_analyzer import analyze_reviews
 from research.social_checker import check_social_presence
 from research.website_checker import check_website
 from reports.map_builder import build_leads_map
 from reports.report_builder import build_lead_report, render_report
-from storage.db import init_db, save_business, save_lead_report
+from storage.db import init_db, save_business, save_crm_lead, save_lead_report
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -47,11 +48,18 @@ def run_pipeline(
     category: str | None = None,
     location: str | None = None,
     max_results: int = 10,
-) -> tuple[list[str], list[LeadReport], str | None]:
+    generate_proposals: bool = False,
+    max_workers: int = 6,
+) -> tuple[list[str], list[LeadReport], str | None, list[ProposalDocument]]:
     """
     Full pipeline for one search. Pass either `query` (e.g. "restaurants in
-    Dar es Salaam") OR explicit `category`/`location`. Returns
-    (rendered_markdown_reports, LeadReport_objects, path_to_map_html).
+    Dar es Salaam") OR explicit `category`/`location`.
+
+    V1 always runs. When generate_proposals=True, V2 qualification ->
+    design -> cost -> proposal PDF runs for each lead above the minimum
+    qualification threshold.
+
+    Returns (rendered_markdown_reports, LeadReport_objects, path_to_map_html, ProposalDocument_list).
     """
     init_db()
 
@@ -64,26 +72,132 @@ def run_pipeline(
     businesses = search_businesses(category, location, max_results=max_results)
     logger.info("Found %d businesses", len(businesses))
 
+    if not businesses:
+        return [], [], None, []
+
     rendered_reports: list[str] = []
     lead_reports: list[LeadReport] = []
+    proposals: list[ProposalDocument] = []
 
-    for business in businesses:
+    # Parallel processing setup
+    db_lock = threading.Lock()
+    effective_workers = min(len(businesses), max_workers) if max_workers > 0 else 1
+
+    def _process_one(idx: int, business: Business) -> tuple[int, LeadReport, str, ProposalDocument | None] | None:
+        """Process a single business. Returns (index, report, rendered, proposal) or None on failure."""
         try:
-            save_business(business)
+            with db_lock:
+                save_business(business)
+                save_crm_lead(business.place_id)  # ensure a CRM record exists (status New)
+
             bundle = research_business(business)
             report = build_lead_report(bundle)
-            save_lead_report(report)
-            rendered_reports.append(render_report(report))
-            lead_reports.append(report)
+
+            with db_lock:
+                save_lead_report(report)
+
+            rendered = render_report(report)
+
             logger.info(
                 "Scored %s: %d/100 (%s)", business.name, report.lead_score, report.priority
             )
+
+            # V3 signals are cheap and deterministic — persist them for every
+            # lead so ranking/outreach commands work without re-discovery.
+            from analysis.lead_qualifier import qualify_lead
+            from discovery.models import ProblemAnalysis
+            from research.contact_finder import find_reachability
+            from storage.db import save_qualification_score, save_reachability
+
+            problems = ProblemAnalysis(problems=report.problems)
+            with db_lock:
+                save_qualification_score(business.place_id, qualify_lead(bundle, problems))
+                save_reachability(business.place_id, find_reachability(bundle))
+
+            proposal = None
+            if generate_proposals:
+                proposal = _run_v2_safe(bundle, report, db_lock)
+
+            return (idx, report, rendered, proposal)
         except Exception:
             logger.exception("Failed to process business: %s", business.name)
+            return None
+
+    # Tag businesses with their index for ordering (also keep explicit mapping)
+    for i, b in enumerate(businesses):
+        try:
+            object.__setattr__(b, "_test_index", i)
+        except Exception:
+            pass
+        # also store via dict attribute if Pydantic blocks it
+        b.__dict__["_test_index"] = i
+
+    results: list[tuple[LeadReport, str, ProposalDocument | None] | None] = [None] * len(businesses)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=effective_workers) as executor:
+        futures = [executor.submit(_process_one, i, b) for i, b in enumerate(businesses)]
+        for future in concurrent.futures.as_completed(futures):
+            result = future.result()
+            if result:
+                idx, report, rendered, proposal = result
+                results[idx] = (report, rendered, proposal)
+
+    # Unpack in original order
+    for r in results:
+        if r is None:
             continue
+        report, rendered, proposal = r
+        rendered_reports.append(rendered)
+        lead_reports.append(report)
+        if proposal:
+            proposals.append(proposal)
 
     map_path = build_leads_map(lead_reports) if lead_reports else None
-    return rendered_reports, lead_reports, map_path
+    return rendered_reports, lead_reports, map_path, proposals
+
+
+def _run_v2(bundle: ResearchBundle, report: LeadReport) -> ProposalDocument | None:
+    from analysis.problem_detector import ProblemAnalysis
+    from reports.proposal_builder import generate_proposal as _gen_proposal
+    from storage.db import save_proposal as _save_proposal
+
+    problems = ProblemAnalysis(problems=report.problems)
+
+    proposal = _gen_proposal(bundle, problems)
+    if proposal is None:
+        return None
+
+    _save_proposal(bundle.business.place_id, proposal)
+    logger.info(
+        "Generated proposal for %s: %s ($%d–$%d, %d–%d weeks)",
+        bundle.business.name, proposal.proposed_solution.package_name,
+        proposal.cost_estimate.estimated_cost_min, proposal.cost_estimate.estimated_cost_max,
+        proposal.cost_estimate.estimated_weeks_min, proposal.cost_estimate.estimated_weeks_max,
+    )
+    return proposal
+
+
+def _run_v2_safe(bundle: ResearchBundle, report: LeadReport, db_lock: threading.Lock) -> ProposalDocument | None:
+    """Thread-safe variant of _run_v2 that serializes the DB write."""
+    from analysis.problem_detector import ProblemAnalysis
+    from reports.proposal_builder import generate_proposal as _gen_proposal
+    from storage.db import save_proposal as _save_proposal
+
+    problems = ProblemAnalysis(problems=report.problems)
+
+    proposal = _gen_proposal(bundle, problems)
+    if proposal is None:
+        return None
+
+    with db_lock:
+        _save_proposal(bundle.business.place_id, proposal)
+    logger.info(
+        "Generated proposal for %s: %s ($%d–$%d, %d–%d weeks)",
+        bundle.business.name, proposal.proposed_solution.package_name,
+        proposal.cost_estimate.estimated_cost_min, proposal.cost_estimate.estimated_cost_max,
+        proposal.cost_estimate.estimated_weeks_min, proposal.cost_estimate.estimated_weeks_max,
+    )
+    return proposal
 
 
 if __name__ == "__main__":

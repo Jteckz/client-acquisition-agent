@@ -26,7 +26,11 @@ from discovery.models import Business
 logger = logging.getLogger(__name__)
 
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
-OVERPASS_URL = "https://overpass-api.de/api/interpreter"
+OVERPASS_URLS = [
+    "https://overpass-api.de/api/interpreter",
+    "https://overpass.osm.ch/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter",
+]
 OVERPASS_USER_AGENT = "ClientAcquisitionAgent/1.0"
 
 # Maps a friendly category name -> list of (OSM key, OSM value) tag pairs.
@@ -117,19 +121,32 @@ def geocode_location(location_name: str) -> tuple[float, float]:
     return float(results[0]["lat"]), float(results[0]["lon"])
 
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=8), reraise=True)
+@retry(stop=stop_after_attempt(2), wait=wait_exponential(multiplier=1, min=1, max=6), reraise=True)
 def _run_overpass_query(ql: str) -> dict:
-    resp = requests.post(
-        OVERPASS_URL,
-        data={"data": ql},
-        headers={
-            "User-Agent": OVERPASS_USER_AGENT,
-            "Accept": "*/*",
-        },
-        timeout=60,
-    )
-    resp.raise_for_status()
-    return resp.json()
+    """POST the query to the first working Overpass endpoint.
+
+    The public Overpass API is community-run and frequently rate-limits or
+    times out (5xx). Try each configured mirror in order, falling through on
+    any RequestException, and only raise once every endpoint has failed.
+    """
+    last_error: Exception | None = None
+    for url in OVERPASS_URLS:
+        try:
+            resp = requests.post(
+                url,
+                data={"data": ql},
+                headers={
+                    "User-Agent": OVERPASS_USER_AGENT,
+                    "Accept": "*/*",
+                },
+                timeout=60,
+            )
+            resp.raise_for_status()
+            return resp.json()
+        except requests.RequestException as exc:
+            logger.warning("Overpass endpoint %s failed (%s) — trying next mirror.", url, exc)
+            last_error = exc
+    raise last_error or RuntimeError("No Overpass endpoint available")
 
 
 def search_businesses(

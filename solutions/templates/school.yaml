@@ -1,0 +1,17 @@
+package_name: "School Management Platform"
+base_features:
+  - "Website"
+  - "Student Portal"
+  - "Fee Payment System"
+  - "Result/Grade Portal"
+optional_features:
+  - "Online Admission"
+  - "Timetable Management"
+  - "Parent-Teacher Communication"
+default_tech_stack:
+  frontend: "React"
+  backend: "Django"
+  database: "PostgreSQL"
+  hosting: "DigitalOcean"
+base_cost_usd: [2000, 4000]
+base_weeks: [4, 8]

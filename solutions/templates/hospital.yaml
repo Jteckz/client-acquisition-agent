@@ -1,0 +1,17 @@
+package_name: "Hospital Management System"
+base_features:
+  - "Website"
+  - "Patient Portal"
+  - "Appointment Booking"
+  - "Medical Records"
+optional_features:
+  - "Telemedicine"
+  - "Pharmacy Integration"
+  - "Lab Results Portal"
+default_tech_stack:
+  frontend: "React"
+  backend: "FastAPI"
+  database: "PostgreSQL"
+  hosting: "DigitalOcean"
+base_cost_usd: [3000, 6000]
+base_weeks: [6, 10]

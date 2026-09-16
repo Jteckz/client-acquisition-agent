@@ -10,7 +10,7 @@ def recommend_solutions(business: Business, analysis: ProblemAnalysis) -> Soluti
     if not analysis.problems:
         return SolutionRecommendation(solutions=[], potential_value="Low", reasoning="No problems detected.")
 
-    llm = get_llm_client()
+    llm = get_llm_client(role="reasoning")
     prompt = SOLUTION_RECOMMENDATION_PROMPT.format(
         business_name=business.name,
         category=business.category,
