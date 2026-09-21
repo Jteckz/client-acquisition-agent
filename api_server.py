@@ -16,7 +16,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -27,6 +27,12 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from auth.routes import router as auth_router
+from auth.security import get_current_user_or_api_key, require_plan
+from core.config import settings as auth_settings
+from llm.client import get_last_token_count
+from middleware.usage import UsageMiddleware
+from schemas.auth import CurrentUser
 from config.settings import settings
 from storage.db import init_db, get_connection
 
@@ -34,19 +40,39 @@ from storage.db import init_db, get_connection
 # ── Lifespan ──────────────────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    init_db()
+    """Initialize databases on startup and verify connections."""
+    init_db()  # SQLite pipeline DB
+
+    # Initialize async auth DB and verify connection
+    try:
+        from core.database import init_db as init_auth_db
+        await init_auth_db()
+        print("[startup] Auth database tables verified.")
+    except Exception as exc:
+        print(f"[startup] WARNING: Auth database connection failed: {exc}", file=sys.stderr)
+        print("[startup] Auth features will not work until the database is available.", file=sys.stderr)
+
     yield
 
 
 app = FastAPI(title="Client Acquisition Agent API", version="1.0.0", lifespan=lifespan)
 
+# ── CORS ──────────────────────────────────────────────────────────────
+_cors_origins = [o.strip() for o in auth_settings.CORS_ORIGINS.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ── Usage tracking middleware ─────────────────────────────────────────
+app.add_middleware(UsageMiddleware)
+
+# ── Auth router ───────────────────────────────────────────────────────
+app.include_router(auth_router)
 
 
 # ── Pydantic models ──────────────────────────────────────────────────
@@ -171,7 +197,13 @@ def rows_to_list(rows) -> list[dict]:
 
 # -- Discovery --
 @app.post("/api/discover")
-async def discover(req: DiscoverRequest):
+async def discover(
+    req: DiscoverRequest,
+    request: Request,
+    user: CurrentUser = Depends(get_current_user_or_api_key),
+):
+    """Start an async discovery job. Requires authentication."""
+    request.state.user_id = user.user_id
     job_id = str(uuid.uuid4())
     with _jobs_lock:
         _jobs[job_id] = {
@@ -186,7 +218,13 @@ async def discover(req: DiscoverRequest):
 
 
 @app.get("/api/discover/{job_id}")
-async def get_discovery_status(job_id: str):
+async def get_discovery_status(
+    job_id: str,
+    request: Request,
+    user: CurrentUser = Depends(get_current_user_or_api_key),
+):
+    """Poll discovery job status. Requires authentication."""
+    request.state.user_id = user.user_id
     with _jobs_lock:
         job = _jobs.get(job_id)
     if not job:
@@ -196,14 +234,25 @@ async def get_discovery_status(job_id: str):
 
 # -- Categories --
 @app.get("/api/categories")
-async def list_categories():
+async def list_categories(
+    request: Request,
+    user: CurrentUser = Depends(get_current_user_or_api_key),
+):
+    """List supported business categories. Requires authentication."""
+    request.state.user_id = user.user_id
     from discovery.osm_places import list_supported_categories
     return list_supported_categories()
 
 
 # -- Businesses --
 @app.get("/api/businesses/{place_id}")
-async def get_business(place_id: str):
+async def get_business(
+    place_id: str,
+    request: Request,
+    user: CurrentUser = Depends(get_current_user_or_api_key),
+):
+    """Get business details by place_id. Requires authentication."""
+    request.state.user_id = user.user_id
     from storage.db import get_business as db_get_business
     row = db_get_business(place_id)
     if not row:
@@ -233,7 +282,13 @@ async def get_business(place_id: str):
 
 
 @app.get("/api/businesses/{place_id}/research")
-async def get_research(place_id: str):
+async def get_research(
+    place_id: str,
+    request: Request,
+    user: CurrentUser = Depends(get_current_user_or_api_key),
+):
+    """Get research data for a business. Requires authentication."""
+    request.state.user_id = user.user_id
     from storage.db import get_reachability, get_latest_problems
 
     reach = get_reachability(place_id)
@@ -275,12 +330,16 @@ async def get_research(place_id: str):
 # -- Leads --
 @app.get("/api/leads")
 async def list_leads(
+    request: Request,
     limit: int = Query(50, ge=1, le=200),
     priority: str | None = None,
     category: str | None = None,
     min_score: int | None = None,
     max_score: int | None = None,
+    user: CurrentUser = Depends(get_current_user_or_api_key),
 ):
+    """List leads with optional filters. Requires authentication."""
+    request.state.user_id = user.user_id
     with get_connection() as conn:
         query = """
             SELECT b.place_id, b.name, b.category, b.website, b.phone, b.address,
@@ -334,7 +393,13 @@ async def list_leads(
 
 
 @app.get("/api/leads/{place_id}")
-async def get_lead(place_id: str):
+async def get_lead(
+    place_id: str,
+    request: Request,
+    user: CurrentUser = Depends(get_current_user_or_api_key),
+):
+    """Get full lead detail. Requires authentication."""
+    request.state.user_id = user.user_id
     from storage.db import get_business as db_get_business, get_latest_problems
 
     biz = db_get_business(place_id)
@@ -439,7 +504,13 @@ async def get_lead(place_id: str):
 
 
 @app.get("/api/leads/{place_id}/qualification")
-async def get_qualification(place_id: str):
+async def get_qualification(
+    place_id: str,
+    request: Request,
+    user: CurrentUser = Depends(get_current_user_or_api_key),
+):
+    """Get qualification scores for a lead. Requires authentication."""
+    request.state.user_id = user.user_id
     with get_connection() as conn:
         qs = conn.execute(
             "SELECT * FROM qualification_scores WHERE place_id = ? ORDER BY id DESC LIMIT 1",
@@ -461,7 +532,14 @@ async def get_qualification(place_id: str):
 
 # -- Proposals --
 @app.get("/api/proposals")
-async def list_proposals(place_id: str | None = None, limit: int = 50):
+async def list_proposals(
+    request: Request,
+    place_id: str | None = None,
+    limit: int = 50,
+    user: CurrentUser = Depends(require_plan("pro")),
+):
+    """List proposals. Requires 'pro' plan or higher."""
+    request.state.user_id = user.user_id
     with get_connection() as conn:
         if place_id:
             cur = conn.execute(
@@ -492,7 +570,13 @@ async def list_proposals(place_id: str | None = None, limit: int = 50):
 
 
 @app.get("/api/proposals/{proposal_id}")
-async def get_proposal(proposal_id: int):
+async def get_proposal(
+    proposal_id: int,
+    request: Request,
+    user: CurrentUser = Depends(require_plan("pro")),
+):
+    """Get single proposal detail. Requires 'pro' plan or higher."""
+    request.state.user_id = user.user_id
     with get_connection() as conn:
         row = conn.execute(
             "SELECT p.*, b.name as business_name FROM proposals p JOIN businesses b ON b.place_id = p.place_id WHERE p.id = ?",
@@ -514,7 +598,13 @@ async def get_proposal(proposal_id: int):
 
 
 @app.get("/api/proposals/{proposal_id}/pdf")
-async def download_proposal_pdf(proposal_id: int):
+async def download_proposal_pdf(
+    proposal_id: int,
+    request: Request,
+    user: CurrentUser = Depends(require_plan("pro")),
+):
+    """Download proposal PDF. Requires 'pro' plan or higher."""
+    request.state.user_id = user.user_id
     with get_connection() as conn:
         row = conn.execute("SELECT pdf_path FROM proposals WHERE id = ?", (proposal_id,)).fetchone()
     if not row or not row["pdf_path"]:
@@ -530,11 +620,15 @@ async def download_proposal_pdf(proposal_id: int):
 # -- Outreach drafts --
 @app.get("/api/outreach/drafts")
 async def list_drafts(
+    request: Request,
     status: str | None = None,
     channel: str | None = None,
     place_id: str | None = None,
     limit: int = 50,
+    user: CurrentUser = Depends(get_current_user_or_api_key),
 ):
+    """List outreach drafts with optional filters. Requires authentication."""
+    request.state.user_id = user.user_id
     from storage.db import get_outreach_drafts
     drafts = get_outreach_drafts(status, limit)
     results = []
@@ -549,7 +643,13 @@ async def list_drafts(
 
 
 @app.get("/api/outreach/drafts/{draft_id}")
-async def get_draft(draft_id: int):
+async def get_draft(
+    draft_id: int,
+    request: Request,
+    user: CurrentUser = Depends(get_current_user_or_api_key),
+):
+    """Get a single outreach draft. Requires authentication."""
+    request.state.user_id = user.user_id
     from storage.db import get_outreach_draft
     d = get_outreach_draft(draft_id)
     if not d:
@@ -558,7 +658,14 @@ async def get_draft(draft_id: int):
 
 
 @app.post("/api/outreach/draft")
-async def create_draft(req: OutreachDraftCreate):
+async def create_draft(
+    req: OutreachDraftCreate,
+    request: Request,
+    response: Response,
+    user: CurrentUser = Depends(get_current_user_or_api_key),
+):
+    """Create a new outreach draft. Requires authentication."""
+    request.state.user_id = user.user_id
     from analysis.outreach_drafter import draft_outreach
     from analysis.outreach_preparer import prepare_hook
     from analysis.problem_detector import ProblemAnalysis
@@ -588,7 +695,13 @@ async def create_draft(req: OutreachDraftCreate):
 
 
 @app.post("/api/outreach/drafts/{draft_id}/approve")
-async def approve_draft(draft_id: int):
+async def approve_draft(
+    draft_id: int,
+    request: Request,
+    user: CurrentUser = Depends(get_current_user_or_api_key),
+):
+    """Approve an outreach draft. Requires authentication."""
+    request.state.user_id = user.user_id
     from storage.db import approve_draft
     try:
         d = approve_draft(draft_id)
@@ -598,7 +711,13 @@ async def approve_draft(draft_id: int):
 
 
 @app.post("/api/outreach/drafts/{draft_id}/reject")
-async def reject_draft_endpoint(draft_id: int):
+async def reject_draft_endpoint(
+    draft_id: int,
+    request: Request,
+    user: CurrentUser = Depends(get_current_user_or_api_key),
+):
+    """Reject an outreach draft. Requires authentication."""
+    request.state.user_id = user.user_id
     from storage.db import reject_draft
     try:
         d = reject_draft(draft_id)
@@ -608,7 +727,13 @@ async def reject_draft_endpoint(draft_id: int):
 
 
 @app.post("/api/outreach/drafts/{draft_id}/send")
-async def mark_sent(draft_id: int):
+async def mark_sent(
+    draft_id: int,
+    request: Request,
+    user: CurrentUser = Depends(get_current_user_or_api_key),
+):
+    """Mark an outreach draft as sent. Requires authentication."""
+    request.state.user_id = user.user_id
     from storage.db import mark_draft_sent
     try:
         d = mark_draft_sent(draft_id)
@@ -619,7 +744,13 @@ async def mark_sent(draft_id: int):
 
 # -- Responses --
 @app.get("/api/responses")
-async def list_responses(place_id: str | None = None):
+async def list_responses(
+    request: Request,
+    place_id: str | None = None,
+    user: CurrentUser = Depends(get_current_user_or_api_key),
+):
+    """List responses with optional place_id filter. Requires authentication."""
+    request.state.user_id = user.user_id
     with get_connection() as conn:
         if place_id:
             cur = conn.execute(
@@ -632,7 +763,15 @@ async def list_responses(place_id: str | None = None):
 
 
 @app.post("/api/outreach/drafts/{draft_id}/response")
-async def log_response(draft_id: int, req: ResponseLog):
+async def log_response(
+    draft_id: int,
+    req: ResponseLog,
+    request: Request,
+    response: Response,
+    user: CurrentUser = Depends(get_current_user_or_api_key),
+):
+    """Log and classify a response to an outreach draft. Requires authentication."""
+    request.state.user_id = user.user_id
     from storage.db import get_outreach_draft, save_response, update_crm_after_response
     from analysis.response_classifier import classify_response
 
@@ -650,14 +789,25 @@ async def log_response(draft_id: int, req: ResponseLog):
 
 # -- CRM --
 @app.get("/api/crm/leads")
-async def list_crm_leads():
+async def list_crm_leads(
+    request: Request,
+    user: CurrentUser = Depends(get_current_user_or_api_key),
+):
+    """List all CRM leads. Requires authentication."""
+    request.state.user_id = user.user_id
     with get_connection() as conn:
         cur = conn.execute("SELECT * FROM crm_leads")
         return rows_to_list(cur.fetchall())
 
 
 @app.get("/api/crm/leads/{place_id}")
-async def get_crm_lead(place_id: str):
+async def get_crm_lead(
+    place_id: str,
+    request: Request,
+    user: CurrentUser = Depends(get_current_user_or_api_key),
+):
+    """Get CRM status for a lead. Requires authentication."""
+    request.state.user_id = user.user_id
     from storage.db import get_crm_lead
     row = get_crm_lead(place_id)
     if not row:
@@ -666,14 +816,28 @@ async def get_crm_lead(place_id: str):
 
 
 @app.put("/api/crm/leads/{place_id}/pipeline")
-async def update_pipeline(place_id: str, req: PipelineUpdate):
+async def update_pipeline(
+    place_id: str,
+    req: PipelineUpdate,
+    request: Request,
+    user: CurrentUser = Depends(get_current_user_or_api_key),
+):
+    """Update pipeline status for a CRM lead. Requires authentication."""
+    request.state.user_id = user.user_id
     from storage.db import save_crm_lead
     save_crm_lead(place_id, pipeline_status=req.pipeline_status)
     return {"place_id": place_id, "pipeline_status": req.pipeline_status}
 
 
 @app.put("/api/crm/leads/{place_id}/interest")
-async def update_interest(place_id: str, req: InterestUpdate):
+async def update_interest(
+    place_id: str,
+    req: InterestUpdate,
+    request: Request,
+    user: CurrentUser = Depends(get_current_user_or_api_key),
+):
+    """Update interest level for a CRM lead. Requires authentication."""
+    request.state.user_id = user.user_id
     from storage.db import save_crm_lead
     save_crm_lead(place_id, interest_level=req.interest_level)
     return {"place_id": place_id, "interest_level": req.interest_level}
@@ -681,7 +845,12 @@ async def update_interest(place_id: str, req: InterestUpdate):
 
 # -- Follow-ups --
 @app.get("/api/follow-ups")
-async def list_follow_ups():
+async def list_follow_ups(
+    request: Request,
+    user: CurrentUser = Depends(get_current_user_or_api_key),
+):
+    """List leads due for follow-up. Requires authentication."""
+    request.state.user_id = user.user_id
     from analysis.followup_agent import list_leads_due_for_followup
     leads = list_leads_due_for_followup()
     results = []
@@ -702,14 +871,25 @@ async def list_follow_ups():
 
 # -- Rankings --
 @app.get("/api/rankings")
-async def list_rankings(limit: int = 20):
+async def list_rankings(
+    request: Request,
+    limit: int = 20,
+    user: CurrentUser = Depends(get_current_user_or_api_key),
+):
+    """Get opportunity rankings. Requires authentication."""
+    request.state.user_id = user.user_id
     from storage.db import get_opportunity_rankings
     rows = get_opportunity_rankings(limit)
     return rows_to_list(rows)
 
 
 @app.post("/api/rankings/refresh")
-async def refresh_rankings():
+async def refresh_rankings(
+    request: Request,
+    user: CurrentUser = Depends(get_current_user_or_api_key),
+):
+    """Refresh opportunity rankings. Requires authentication."""
+    request.state.user_id = user.user_id
     from analysis.opportunity_ranker import rank_all
     rankings = rank_all(50)
     return {"ranked": len(rankings), "message": "Rankings refreshed"}
@@ -717,13 +897,24 @@ async def refresh_rankings():
 
 # -- Dashboard --
 @app.get("/api/dashboard/funnel")
-async def get_funnel():
+async def get_funnel(
+    request: Request,
+    user: CurrentUser = Depends(get_current_user_or_api_key),
+):
+    """Get funnel metrics. Requires authentication."""
+    request.state.user_id = user.user_id
     from storage.db import get_funnel_metrics
     return get_funnel_metrics()
 
 
 @app.get("/api/dashboard/leads")
-async def get_dashboard_leads(limit: int = 50):
+async def get_dashboard_leads(
+    request: Request,
+    limit: int = 50,
+    user: CurrentUser = Depends(get_current_user_or_api_key),
+):
+    """Get dashboard detail rows. Requires authentication."""
+    request.state.user_id = user.user_id
     from storage.db import get_dashboard_detail_rows
     rows = get_dashboard_detail_rows(limit)
     results = []
@@ -734,7 +925,13 @@ async def get_dashboard_leads(limit: int = 50):
 
 
 @app.post("/api/dashboard/export")
-async def export_dashboard(limit: int = 50):
+async def export_dashboard(
+    request: Request,
+    limit: int = 50,
+    user: CurrentUser = Depends(get_current_user_or_api_key),
+):
+    """Export dashboard to CSV. Requires authentication."""
+    request.state.user_id = user.user_id
     import csv
     import io
     from storage.db import get_funnel_metrics, get_dashboard_detail_rows
@@ -769,7 +966,12 @@ async def export_dashboard(limit: int = 50):
 
 # -- Insights --
 @app.get("/api/insights")
-async def get_insights():
+async def get_insights(
+    request: Request,
+    user: CurrentUser = Depends(get_current_user_or_api_key),
+):
+    """Get insights by category. Requires authentication."""
+    request.state.user_id = user.user_id
     from storage.db import get_connection as db_conn
     with db_conn() as conn:
         cur = conn.execute("""
@@ -810,7 +1012,12 @@ async def get_insights():
 
 # -- Settings --
 @app.get("/api/settings")
-async def get_settings():
+async def get_settings(
+    request: Request,
+    user: CurrentUser = Depends(get_current_user_or_api_key),
+):
+    """Get current settings. Requires authentication."""
+    request.state.user_id = user.user_id
     return {
         "llm_provider": settings.LLM_PROVIDER,
         "ollama_host": settings.OLLAMA_HOST,
@@ -827,7 +1034,13 @@ async def get_settings():
 
 
 @app.put("/api/settings")
-async def update_settings(req: SettingsUpdate):
+async def update_settings(
+    req: SettingsUpdate,
+    request: Request,
+    user: CurrentUser = Depends(get_current_user_or_api_key),
+):
+    """Update settings. Requires authentication."""
+    request.state.user_id = user.user_id
     if req.llm_provider is not None:
         settings.LLM_PROVIDER = req.llm_provider
     if req.ollama_host is not None:
@@ -855,7 +1068,12 @@ async def update_settings(req: SettingsUpdate):
 
 # -- Model Status --
 @app.get("/api/model-status")
-async def get_model_status():
+async def get_model_status(
+    request: Request,
+    user: CurrentUser = Depends(get_current_user_or_api_key),
+):
+    """Check Ollama resident models. Requires authentication."""
+    request.state.user_id = user.user_id
     import requests as req_lib
     host = settings.OLLAMA_HOST.rstrip("/")
     try:
@@ -879,6 +1097,7 @@ async def get_model_status():
 # -- Health --
 @app.get("/api/health")
 async def health():
+    """Health check — no authentication required."""
     return {"status": "ok", "version": "1.0.0"}
 
 

@@ -352,6 +352,5 @@ def _human_bytes(n: int) -> str:
         value /= 1024
     return f"{value:.1f}GB"
 
-
 if __name__ == "__main__":
     main()

@@ -31,6 +31,7 @@ import json
 import logging
 import re
 import threading
+import threading as _threading
 from abc import ABC, abstractmethod
 from typing import Any, Literal
 
@@ -46,6 +47,27 @@ Role = Literal["worker", "reasoning"]
 # Limits concurrent LLM calls to avoid overwhelming Ollama (or a hosted API)
 # when the pipeline processes multiple businesses in parallel threads.
 _llm_semaphore = threading.Semaphore(3)
+
+# Thread-local storage for tracking token counts per request
+_token_local = _threading.local()
+
+
+def get_last_token_count() -> int:
+    """Return the total token count (prompt + completion) from the last LLM call.
+
+    Returns 0 if no token data is available (e.g., non-Ollama provider
+    or first call).
+    """
+    return getattr(_token_local, "count", 0)
+
+
+def set_last_token_count(count: int) -> None:
+    """Store the token count from the most recent LLM call in thread-local storage.
+
+    Args:
+        count: Total tokens (prompt + completion) from the LLM response.
+    """
+    _token_local.count = count
 
 WORKER_ONLY_WARNING = (
     "Running in worker-only mode — reasoning-tier tasks will use the smaller "
@@ -126,6 +148,12 @@ class OllamaClient(LLMClient):
                 )
 
             data = resp.json()
+
+            # Track token counts from Ollama response
+            prompt_tokens = data.get("prompt_eval_count", 0)
+            completion_tokens = data.get("eval_count", 0)
+            set_last_token_count(prompt_tokens + completion_tokens)
+
             return data.get("response", "")
 
     def unload(self) -> None:
