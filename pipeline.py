@@ -18,6 +18,7 @@ from research.website_checker import check_website
 from reports.map_builder import build_leads_map
 from reports.report_builder import build_lead_report, render_report
 from storage.db import init_db, save_business, save_crm_lead, save_lead_report
+from typing import Callable
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -50,6 +51,7 @@ def run_pipeline(
     max_results: int = 10,
     generate_proposals: bool = False,
     max_workers: int = 6,
+    on_progress: Callable[[int, int, str, str], None] | None = None,
 ) -> tuple[list[str], list[LeadReport], str | None, list[ProposalDocument]]:
     """
     Full pipeline for one search. Pass either `query` (e.g. "restaurants in
@@ -58,6 +60,13 @@ def run_pipeline(
     V1 always runs. When generate_proposals=True, V2 qualification ->
     design -> cost -> proposal PDF runs for each lead above the minimum
     qualification threshold.
+
+    `on_progress`, when given, is called as
+    `on_progress(current, total, current_business, phase)`:
+      - once right after discovery with (0, N, "", "Found N businesses...")
+      - once per business as each finishes (success or failure), so callers
+        polling a job endpoint see a live 0% -> 100% progression instead of
+        a bar stuck at 0% for the whole run.
 
     Returns (rendered_markdown_reports, LeadReport_objects, path_to_map_html, ProposalDocument_list).
     """
@@ -71,6 +80,12 @@ def run_pipeline(
     logger.info("Discovering '%s' businesses near '%s'", category, location)
     businesses = search_businesses(category, location, max_results=max_results)
     logger.info("Found %d businesses", len(businesses))
+
+    if on_progress is not None:
+        try:
+            on_progress(0, len(businesses), "", f"Found {len(businesses)} businesses, analyzing...")
+        except Exception:
+            logger.exception("on_progress callback failed (discovery event)")
 
     if not businesses:
         return [], [], None, []
@@ -136,11 +151,21 @@ def run_pipeline(
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=effective_workers) as executor:
         futures = [executor.submit(_process_one, i, b) for i, b in enumerate(businesses)]
+        future_to_business = {f: businesses[i] for f, i in zip(futures, range(len(businesses)))}
+        done = 0
         for future in concurrent.futures.as_completed(futures):
             result = future.result()
+            biz = future_to_business.get(future)
+            biz_name = biz.name if biz is not None else ""
             if result:
                 idx, report, rendered, proposal = result
                 results[idx] = (report, rendered, proposal)
+            done += 1
+            if on_progress is not None:
+                try:
+                    on_progress(done, len(businesses), biz_name, f"Analyzing {done}/{len(businesses)}...")
+                except Exception:
+                    logger.exception("on_progress callback failed (progress event)")
 
     # Unpack in original order
     for r in results:
