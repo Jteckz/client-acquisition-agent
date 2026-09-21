@@ -104,6 +104,16 @@ def _run_discovery_job(job_id: str, req: DiscoverRequest):
     """Run discovery in a background thread."""
     from pipeline import run_pipeline
 
+    def _on_progress(current: int, total: int, current_business: str, phase: str):
+        with _jobs_lock:
+            job = _jobs.get(job_id)
+            if job is None:
+                return
+            job["progress"]["current"] = current
+            job["progress"]["total"] = total
+            job["progress"]["current_business"] = current_business
+            job["progress"]["phase"] = phase
+
     try:
         with _jobs_lock:
             _jobs[job_id]["status"] = "running"
@@ -115,6 +125,7 @@ def _run_discovery_job(job_id: str, req: DiscoverRequest):
             location=req.location,
             max_results=req.limit,
             generate_proposals=req.generate_proposals,
+            on_progress=_on_progress,
         )
 
         report_data = []
@@ -130,11 +141,14 @@ def _run_discovery_job(job_id: str, req: DiscoverRequest):
             })
 
         with _jobs_lock:
+            total = _jobs[job_id]["progress"].get("total") or len(report_data)
+            # current = total processed (including per-business failures that
+            # yield no report), so polling clients always observe 100% here.
             _jobs[job_id]["status"] = "completed"
             _jobs[job_id]["progress"]["phase"] = "Done"
             _jobs[job_id]["partial_results"] = report_data
-            _jobs[job_id]["progress"]["current"] = len(report_data)
-            _jobs[job_id]["progress"]["total"] = len(report_data)
+            _jobs[job_id]["progress"]["current"] = total
+            _jobs[job_id]["progress"]["total"] = total
 
     except Exception as e:
         with _jobs_lock:
@@ -871,7 +885,7 @@ async def health():
 # ── Serve frontend static files (production) ─────────────────────────
 DIST_DIR = PROJECT_ROOT / "ACA_UI" / "dist"
 
-if DIST_DIR.exists():
+if (DIST_DIR / "assets").is_dir() and (DIST_DIR / "index.html").is_file():
     app.mount("/assets", StaticFiles(directory=str(DIST_DIR / "assets")), name="static-assets")
 
     @app.get("/{full_path:path}")

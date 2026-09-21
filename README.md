@@ -434,3 +434,6 @@ python main.py export-dashboard --path leads.csv
 python main.py insights
 python main.py model-status   # models currently resident in Ollama RAM (ollama ps equivalent)
 ```
+
+venv/bin/python -m uvicorn api_server:app --host 0.0.0.0 --port 8000 --reload
+
